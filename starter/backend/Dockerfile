@@ -4,7 +4,7 @@ ENV FLASK_RUN_HOST=0.0.0.0
 WORKDIR /
 RUN adduser -u 1000 -D app
 RUN apk update && \
-  apk add \
+  apk add --no-cache \
   pcre \
   pcre-dev \
   build-base \
@@ -12,13 +12,13 @@ RUN apk update && \
   linux-headers \
   openssl \
   libffi-dev \
-  && pip install pipenv
+  && pip install --no-cache-dir --upgrade pip pipenv
 
 RUN mkdir -p /var/www/app && mkdir /app
 
-COPY Pipfile* /app
-RUN cd /app && pipenv install --system --deploy
+COPY Pipfile* /app/
+RUN cd /app && pipenv install --system --skip-lock
 
 COPY . /app
 
-CMD uwsgi --http :5000 --master --enable-threads -s /var/www/app/app.sock --manage-script-name --mount /=app:app
+CMD ["uwsgi", "--http", ":5000", "--master", "--enable-threads", "-s", "/var/www/app/app.sock", "--manage-script-name", "--mount", "/=app:app"]
