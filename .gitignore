@@ -8,3 +8,5 @@ credentials
 setup/terraform/.terraform/ 
 setup/terraform/*.tfstate 
 setup/terraform/*.tfstate.* 
+setup/terraform/terraform.exe
+setup/terraform/*.tfstate*
