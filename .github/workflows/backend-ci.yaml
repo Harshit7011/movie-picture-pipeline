@@ -1,7 +1,7 @@
-name: Backend Continuous Integration
+name: Backend Continuous Deployment
 
 on:
-  pull_request:
+  push:
     branches: [ main ]
     paths:
       - 'starter/backend/**'
@@ -61,22 +61,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Build Docker Image
+        run: docker build --tag mp-backend:${{ github.sha }} .
 
-      - name: Log in to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
+  deploy:
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - name: Build, tag, and push image to Amazon ECR
+      - name: Setup Kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Validate & Build K8s Manifests
         env:
-          ECR_REPOSITORY: ${{ secrets.BACKEND_ECR_REPO }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REPOSITORY:latest .
-          docker push $ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REPOSITORY:latest
+          cd k8s
+          kustomize edit set image backend=mp-backend:$IMAGE_TAG
+          kustomize build .
