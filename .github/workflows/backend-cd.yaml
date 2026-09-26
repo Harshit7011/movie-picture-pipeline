@@ -18,20 +18,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-          cache: 'pipenv'
-
-      - name: Install Pipenv
-        run: pip install pipenv
 
       - name: Install dependencies
-        run: pipenv install --dev
+        run: |
+          pip install pipenv flake8
+          pipenv install --dev --system
 
       - name: Run lint
-        run: pipenv run lint
+        run: flake8 .
 
   test:
     runs-on: ubuntu-latest
@@ -39,20 +37,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-          cache: 'pipenv'
-
-      - name: Install Pipenv
-        run: pip install pipenv
 
       - name: Install dependencies
-        run: pipenv install --dev
+        run: |
+          pip install pipenv
+          pipenv install --dev --system
 
       - name: Run tests
-        run: pipenv run test
+        run: pytest
 
   build:
     needs: [lint, test]
@@ -61,23 +57,54 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Build Docker Image
-        run: docker build --tag mp-backend:${{ github.sha }} .
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: mp-backend
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
   deploy:
-    needs: [build]
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Setup Kustomize
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Set up Kubeconfig
+        run: aws eks update-kubeconfig --region us-east-1 --name cluster
+
+      - name: Set up Kustomize
         uses: imranismail/setup-kustomize@v2
 
-      - name: Validate & Build K8s Manifests
+      - name: Deploy to EKS
         env:
+          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
           IMAGE_TAG: ${{ github.sha }}
         run: |
           cd k8s
-          kustomize edit set image backend=mp-backend:$IMAGE_TAG
-          kustomize build .
+          kustomize edit set image backend=$ECR_REGISTRY/mp-backend:$IMAGE_TAG
+          kustomize build . | kubectl apply -f -
+          kubectl rollout status deployment/backend -n default --timeout=180s
