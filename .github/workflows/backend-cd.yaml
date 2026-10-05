@@ -62,7 +62,6 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: us-east-1
 
       - name: Login to Amazon ECR
@@ -90,7 +89,6 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: us-east-1
 
       - name: Set up Kubeconfig
@@ -106,5 +104,8 @@ jobs:
         run: |
           cd k8s
           kustomize edit set image backend=$ECR_REGISTRY/mp-backend:$IMAGE_TAG
+          kubectl delete deployment backend --ignore-not-found=true
           kustomize build . | kubectl apply -f -
-          kubectl rollout status deployment/backend -n default --timeout=180s
+          kubectl rollout status deployment/backend -n default --timeout=600s
+          echo "=== Backend Deployment Successful ==="
+          kubectl get svc backend -n default
