@@ -77,35 +77,24 @@ jobs:
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-
-      - name: Set up Kubeconfig
-        run: aws eks update-kubeconfig --region us-east-1 --name cluster
-
-      - name: Set up Kustomize
-        uses: imranismail/setup-kustomize@v2
-
-      - name: Deploy to EKS
+  - name: Deploy to EKS
         env:
           ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
           IMAGE_TAG: ${{ github.sha }}
         run: |
           cd k8s
-          kustomize edit set image backend=$ECR_REGISTRY/mp-backend:$IMAGE_TAG
+          # Repo name match karo (Terraform ke output me 'backend' tha)
+          kustomize edit set image backend=$ECR_REGISTRY/backend:$IMAGE_TAG
           kubectl delete deployment backend --ignore-not-found=true
           kustomize build . | kubectl apply -f -
-          kubectl rollout status deployment/backend -n default --timeout=600s
+          
+          # 60s wait karke status inspect karo bina freeze hue
+          sleep 30
+          echo "=== PODS STATUS ==="
+          kubectl get pods -o wide
+          echo "=== DESCRIBE POD (DEBUG EVENTS) ==="
+          kubectl describe pods -l app=backend || true
+          
+          kubectl rollout status deployment/backend -n default --timeout=180s
           echo "=== Backend Deployment Successful ==="
           kubectl get svc backend -n default
